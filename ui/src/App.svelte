@@ -70,6 +70,7 @@
   // Authentication state
   let showAuthDialog = $state(false);
   let closePromptVisible = $state(false);
+  let rememberCloseChoice = $state(false);
 
   // Flag to prevent store subscriptions from firing during initialization
   let isInitializing = true;
@@ -312,7 +313,14 @@
       try {
         const { listen } = await import('@tauri-apps/api/event');
         closeRequestedCleanup = await listen('app-close-requested', () => {
-          closePromptVisible = true;
+          const behavior = localStorage.getItem('rustatio-close-behavior');
+          if (behavior === 'tray') {
+            handleCloseToTray();
+          } else if (behavior === 'quit') {
+            handleQuitFromPrompt();
+          } else {
+            closePromptVisible = true;
+          }
         });
       } catch (error) {
         console.error('Failed to subscribe to close prompt events:', error);
@@ -758,6 +766,13 @@
   // Track the current live stats interval (only one at a time — the active instance)
   let activeLiveStatsInstanceId = null;
   let activeLiveStatsIntervalId = null;
+
+  // Function to save the "remember my choice" application setting
+  function saveCloseBehaviorSetting(behavior) {
+    if (rememberCloseChoice) {
+      localStorage.setItem('rustatio-close-behavior', behavior);
+    }
+  }
 
   // Start live stats polling for a specific instance (only call for the active/visible instance)
   function startLiveStatsForInstance(instanceId) {
@@ -1354,6 +1369,7 @@
 
   async function handleCloseToTray() {
     closePromptVisible = false;
+    saveCloseBehaviorSetting('tray');
     try {
       await api.closeToTray();
     } catch (error) {
@@ -1363,6 +1379,7 @@
 
   async function handleQuitFromPrompt() {
     closePromptVisible = false;
+    saveCloseBehaviorSetting('quit');
     try {
       await api.quitApp();
     } catch (error) {
@@ -1372,6 +1389,7 @@
 
   async function handleCancelClosePrompt() {
     closePromptVisible = false;
+    rememberCloseChoice = false;
     try {
       await api.cancelClosePrompt();
     } catch (error) {
@@ -1663,6 +1681,8 @@
   confirmLabel="Quit"
   kind="danger"
   titleId="app-close-prompt-title"
+  showRememberChoice={true}
+  bind:rememberChoiceChecked={rememberCloseChoice}
   onCancel={handleCancelClosePrompt}
   onSecondary={handleCloseToTray}
   onConfirm={handleQuitFromPrompt}
