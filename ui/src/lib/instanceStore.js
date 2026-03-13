@@ -673,6 +673,41 @@ export const instanceActions = {
 
   // Update a specific instance
   updateInstance: (id, updates) => {
+    // Intercept bulk-edit updates
+    if (id === 'bulk-edit') {
+      const currentInstances = get(instances);
+      const bulkInst = currentInstances.find(i => i.id === 'bulk-edit');
+      if (!bulkInst) return;
+
+      // Ensure we don't overwrite bulk-edit internal fields (like targetIds or torrent)
+      const safeUpdates = { ...updates };
+      delete safeUpdates.id;
+      delete safeUpdates.targetIds;
+      delete safeUpdates.torrent;
+      delete safeUpdates.torrentPath;
+      delete safeUpdates.stats;
+
+      instances.update(insts => {
+        return insts.map(inst => {
+          if (inst.id === 'bulk-edit') {
+            return { ...inst, ...safeUpdates };
+          }
+          if (bulkInst.targetIds && bulkInst.targetIds.includes(inst.id)) {
+            return { ...inst, ...safeUpdates };
+          }
+          return inst;
+        });
+      });
+
+      if (id === get(activeInstanceId)) {
+        updateActiveInstanceStore();
+      }
+
+      // Save session since we probably modified real instances
+      saveSession(get(instances).filter(i => i.id !== 'bulk-edit'), get(activeInstanceId));
+      return;
+    }
+
     // Don't update if no changes
     const currentInstances = get(instances);
     const currentInst = currentInstances.find(i => i.id === id);
@@ -721,6 +756,102 @@ export const instanceActions = {
   // Get current active instance
   getActiveInstance: () => {
     return get(activeInstance);
+  },
+
+  // Create or update a temporary bulk edit instance
+  createBulkInstance: (targetIds) => {
+    if (!targetIds || targetIds.length === 0) return;
+
+    const currentInstances = get(instances);
+
+    // Filter out 'bulk-edit' just in case it's in the list
+    const validTargetIds = targetIds.filter(id => id !== 'bulk-edit');
+    if (validTargetIds.length === 0) return;
+
+    const firstTarget = currentInstances.find(i => i.id === validTargetIds[0]);
+    if (!firstTarget) return;
+
+    // Create a new instance with 'bulk-edit' ID
+    // Clone properties from the first selected instance to use as defaults
+    const bulkInstance = createDefaultInstance('bulk-edit', firstTarget);
+
+    // Overwrite fields specific to bulk edit
+    bulkInstance.targetIds = validTargetIds;
+    bulkInstance.torrent = {
+      name: `Multiple Torrents (${validTargetIds.length})`,
+      isBulk: true,
+      bulkIds: validTargetIds,
+      // Pass along the names for the UI to display
+      bulkNames: validTargetIds.map(id => {
+        const i = currentInstances.find(inst => inst.id === id);
+        return i ? (i.name || i.torrent?.name || i.torrentPath || 'Unknown Torrent') : 'Unknown Torrent';
+      })
+    };
+    bulkInstance.torrentPath = 'Multiple Torrents';
+    bulkInstance.statusMessage = 'Editing multiple instances';
+    bulkInstance.statusType = 'idle';
+    bulkInstance.isRunning = false;
+    bulkInstance.isPaused = false;
+    bulkInstance.stats = null;
+
+    instances.update(insts => {
+      // Remove any existing bulk-edit instance
+      const filtered = insts.filter(inst => inst.id !== 'bulk-edit');
+      return [...filtered, bulkInstance];
+    });
+
+    // Switch view to it
+    activeInstanceId.set('bulk-edit');
+    updateActiveInstanceStore();
+  },
+
+  // Remove an instance from the current bulk edit selection
+  removeTargetInstance: (targetId) => {
+    const bulkId = get(activeInstanceId);
+    if (bulkId !== 'bulk-edit') return; // Not in bulk edit mode
+
+    instances.update(insts => {
+      const bulkInst = insts.find(i => i.id === 'bulk-edit');
+      if (!bulkInst || !bulkInst.targetIds) return insts;
+
+      const updatedTargetIds = bulkInst.targetIds.filter(id => id !== targetId);
+
+      // If less than 2 items left, bulk edit doesn't make sense, just exit back to grid
+      if (updatedTargetIds.length < 2) {
+        // We defer this view change slightly to let the store update finish
+        import('./gridStore.js').then(module => {
+          module.viewMode.set('grid');
+          module.gridActions.deselectAll();
+        });
+
+        return insts.filter(i => i.id !== 'bulk-edit');
+      }
+
+      // Update the bulk-edit instance
+      return insts.map(inst => {
+        if (inst.id === 'bulk-edit') {
+          // Re-generate names list
+          const remainingNames = updatedTargetIds.map(id => {
+            const i = insts.find(inst => inst.id === id);
+            return i ? (i.name || i.torrent?.name || i.torrentPath || 'Unknown Torrent') : 'Unknown Torrent';
+          });
+
+          return {
+            ...inst,
+            targetIds: updatedTargetIds,
+            torrent: {
+              ...inst.torrent,
+              name: `Multiple Torrents (${updatedTargetIds.length})`,
+              bulkIds: updatedTargetIds,
+              bulkNames: remainingNames
+            }
+          };
+        }
+        return inst;
+      });
+    });
+
+    updateActiveInstanceStore();
   },
 
   // Merge a new instance from server (used for real-time sync with watch folder)

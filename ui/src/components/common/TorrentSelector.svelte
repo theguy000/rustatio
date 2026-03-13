@@ -11,7 +11,9 @@
     ChevronDown,
     ChevronRight,
     Upload,
+    X,
   } from '@lucide/svelte';
+  import { instanceActions } from '$lib/instanceStore.js';
 
   let { torrent, selectTorrent, formatBytes } = $props();
 
@@ -94,7 +96,7 @@
 
 <Card class="p-3">
   <h2 class="mb-3 text-primary text-lg font-semibold flex items-center gap-2">
-    <FileText size={20} /> Torrent File
+    <FileText size={20} /> {torrent?.isBulk ? 'Torrent Files' : 'Torrent File'}
   </h2>
 
   <input
@@ -119,30 +121,35 @@
           <div class="font-medium text-sm truncate" title={torrent.name}>
             {torrent.name}
           </div>
-          <div class="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-            <span>{formatBytes(torrent.total_size)}</span>
-            <span class="text-border">•</span>
-            <span>
-              {torrent.file_count || torrent.files?.length || 1} file{(torrent.file_count ||
-                torrent.files?.length ||
-                1) > 1
-                ? 's'
-                : ''}
-            </span>
-            <span class="text-border">•</span>
-            <span>{trackers.length} tracker{trackers.length !== 1 ? 's' : ''}</span>
-          </div>
+          {#if !torrent.isBulk}
+            <div class="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+              <span>{formatBytes(torrent.total_size)}</span>
+              <span class="text-border">•</span>
+              <span>
+                {torrent.file_count || torrent.files?.length || 1} file{(torrent.file_count ||
+                  torrent.files?.length ||
+                  1) > 1
+                  ? 's'
+                  : ''}
+              </span>
+              <span class="text-border">•</span>
+              <span>{trackers.length} tracker{trackers.length !== 1 ? 's' : ''}</span>
+            </div>
+          {/if}
         </div>
-        <Button onclick={handleFileSelect} variant="outline" class="h-8 px-3 text-xs">
-          {#snippet children()}
-            <span class="flex items-center gap-1.5">
-              <FolderOpen size={14} /> Change
-            </span>
-          {/snippet}
-        </Button>
+        {#if !torrent.isBulk}
+          <Button onclick={handleFileSelect} variant="outline" class="h-8 px-3 text-xs">
+            {#snippet children()}
+              <span class="flex items-center gap-1.5">
+                <FolderOpen size={14} /> Change
+              </span>
+            {/snippet}
+          </Button>
+        {/if}
       </div>
 
-      <!-- Quick stats -->
+      {#if !torrent.isBulk}
+        <!-- Quick stats -->
       <div class="grid grid-cols-4 border-t border-border">
         <div class="p-2 text-center border-r border-border">
           <div class="text-xs text-muted-foreground mb-0.5">Size</div>
@@ -165,6 +172,7 @@
           </div>
         </div>
       </div>
+      {/if}
 
       <!-- Details toggle -->
       <button
@@ -182,7 +190,37 @@
       <!-- Expanded details -->
       {#if showDetails}
         <div class="border-t border-border p-3 flex flex-col gap-3 bg-background/50">
-          <!-- Info Hash -->
+          {#if torrent.isBulk}
+            <!-- Bulk Files List -->
+            <div>
+              <div class="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                <Files size={12} /> Selected Instances ({torrent.bulkNames?.length || 0})
+              </div>
+              <div class="flex flex-col gap-1 max-h-[150px] overflow-y-auto">
+                {#each torrent.bulkIds || [] as id, index (id)}
+                  {@const name = torrent.bulkNames?.[index] || 'Unknown Torrent'}
+                  <div class="flex items-center justify-between gap-2 p-1.5 bg-muted rounded text-xs group">
+                    <span class="font-mono truncate flex-1 min-w-0" title={name}>
+                      {name}
+                    </span>
+                    <button
+                      class="flex-shrink-0 p-1 rounded hover:bg-destructive/20 group-hover/btn bg-transparent border-0 cursor-pointer opacity-0 group-hover:opacity-100 transition-all"
+                      onclick={() => instanceActions.removeTargetInstance(id)}
+                      title="Remove from selection"
+                    >
+                      <X
+                        size={12}
+                        strokeWidth={2.5}
+                        class="text-muted-foreground hover:text-destructive transition-colors"
+                      />
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {:else}
+            <!-- Single Torrent Details -->
+            <!-- Info Hash -->
           <div>
             <div class="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
               <Key size={12} /> Info Hash
@@ -255,6 +293,7 @@
               {/if}
             </div>
           {/if}
+          {/if} <!-- End isBulk check -->
         </div>
       {/if}
     </div>
