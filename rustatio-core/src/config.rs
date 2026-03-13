@@ -53,6 +53,8 @@ pub struct InstanceConfig {
     pub cumulative_downloaded: u64,
     pub randomize_rates: bool,
     pub random_range_percent: f64,
+    pub randomize_ratio: bool,
+    pub ratio_range_percent: f64,
     pub update_interval_seconds: u64,
     pub stop_at_ratio_enabled: bool,
     pub stop_at_ratio: f64,
@@ -453,6 +455,8 @@ mod tests {
             initial_downloaded = 0
             randomize_rates = false
             random_range_percent = 0.0
+            randomize_ratio = false
+            ratio_range_percent = 0.0
             update_interval_seconds = 10
             stop_at_ratio_enabled = false
             stop_at_ratio = 0.0

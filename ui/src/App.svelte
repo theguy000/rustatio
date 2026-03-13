@@ -1082,6 +1082,8 @@
       num_want: 50,
       randomize_rates: instance.randomizeRates ?? true,
       random_range_percent: parseFloat(instance.randomRangePercent ?? 20),
+      randomize_ratio: instance.randomizeRatio ?? true,
+      ratio_range_percent: parseFloat(instance.ratioRangePercent ?? 10),
       stop_at_ratio: instance.stopAtRatioEnabled ? parseFloat(instance.stopAtRatio ?? 2.0) : null,
       stop_at_uploaded: instance.stopAtUploadedEnabled
         ? parseFloat(instance.stopAtUploadedGB ?? 10) * 1024 * 1024 * 1024
@@ -1581,6 +1583,8 @@
                 <StopConditions
                   stopAtRatioEnabled={$activeInstance.stopAtRatioEnabled}
                   stopAtRatio={$activeInstance.stopAtRatio}
+                  randomizeRatio={$activeInstance.randomizeRatio}
+                  ratioRangePercent={$activeInstance.ratioRangePercent}
                   stopAtUploadedEnabled={$activeInstance.stopAtUploadedEnabled}
                   stopAtUploadedGB={$activeInstance.stopAtUploadedGB}
                   stopAtDownloadedEnabled={$activeInstance.stopAtDownloadedEnabled}

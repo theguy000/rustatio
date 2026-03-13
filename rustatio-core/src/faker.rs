@@ -65,6 +65,14 @@ pub struct FakerConfig {
     #[serde(default = "default_random_range")]
     pub random_range_percent: f64,
 
+    /// Enable randomization of stop-at-ratio target
+    #[serde(default = "default_randomize_ratio")]
+    pub randomize_ratio: bool,
+
+    /// Ratio randomization range percentage (e.g., 10 means ±10%)
+    #[serde(default = "default_ratio_range")]
+    pub ratio_range_percent: f64,
+
     // Stop conditions
     /// Stop when ratio reaches this value (optional)
     pub stop_at_ratio: Option<f64>,
@@ -119,6 +127,8 @@ pub struct PresetSettings {
     pub completion_percent: Option<f64>,
     pub randomize_rates: Option<bool>,
     pub random_range_percent: Option<f64>,
+    pub randomize_ratio: Option<bool>,
+    pub ratio_range_percent: Option<f64>,
     // Stop conditions with enabled flags
     pub stop_at_ratio_enabled: Option<bool>,
     pub stop_at_ratio: Option<f64>,
@@ -172,6 +182,8 @@ impl From<PresetSettings> for FakerConfig {
             num_want: 50,
             randomize_rates: p.randomize_rates.unwrap_or(true),
             random_range_percent: p.random_range_percent.unwrap_or(20.0),
+            randomize_ratio: p.randomize_ratio.unwrap_or(true),
+            ratio_range_percent: p.ratio_range_percent.unwrap_or(10.0),
             stop_at_ratio,
             stop_at_uploaded,
             stop_at_downloaded,
@@ -199,6 +211,14 @@ const fn default_random_range() -> f64 {
     20.0
 }
 
+const fn default_randomize_ratio() -> bool {
+    true
+}
+
+const fn default_ratio_range() -> f64 {
+    10.0
+}
+
 const fn default_scrape_interval() -> u64 {
     60 // 60 seconds
 }
@@ -217,6 +237,8 @@ impl Default for FakerConfig {
             num_want: 50,
             randomize_rates: true,
             random_range_percent: 20.0,
+            randomize_ratio: true,
+            ratio_range_percent: 10.0,
             stop_at_ratio: None,
             stop_at_uploaded: None,
             stop_at_downloaded: None,
@@ -306,6 +328,9 @@ pub struct RatioFaker {
     // Runtime state
     stats: FakerStats,
 
+    // Effective stop-at-ratio (randomized once per session)
+    effective_stop_at_ratio: Option<f64>,
+
     // Session data
     peer_id: String,
     key: String,
@@ -339,6 +364,7 @@ struct TickInputs {
     torrent_size: u64,
     start_time: Instant,
     config: FakerConfig,
+    effective_stop_at_ratio: Option<f64>,
 }
 
 struct AnnouncePlan {
@@ -473,11 +499,14 @@ impl RatioFaker {
             announce_count: 0,
         };
 
+        let effective_stop_at_ratio = Self::compute_effective_ratio(&config);
+
         Ok(Self {
             torrent,
             config,
             tracker_client: Arc::new(tracker_client),
             stats,
+            effective_stop_at_ratio,
             peer_id,
             key,
             tracker_id: None,
@@ -671,6 +700,7 @@ impl RatioFaker {
             torrent_size: self.torrent.total_size,
             start_time: self.start_time,
             config: self.config.clone(),
+            effective_stop_at_ratio: self.effective_stop_at_ratio,
         }
     }
 
@@ -788,6 +818,7 @@ impl RatioFaker {
             inputs.torrent_size,
             &inputs.config,
             inputs.start_time,
+            inputs.effective_stop_at_ratio,
         );
     }
 
@@ -1007,6 +1038,8 @@ impl RatioFaker {
         self.stats.left = new_left;
         self.stats.torrent_completion = new_torrent_completion;
 
+        // Recompute effective ratio when config changes
+        self.effective_stop_at_ratio = Self::compute_effective_ratio(&config);
         self.config = config;
         Ok(())
     }
@@ -1067,7 +1100,21 @@ impl RatioFaker {
         Ok(())
     }
 
-    /// Apply randomization to a rate if enabled
+    /// Compute the effective stop-at-ratio, applying randomization if enabled.
+    /// Called once at creation and on config update for a stable per-session target.
+    fn compute_effective_ratio(config: &FakerConfig) -> Option<f64> {
+        config.stop_at_ratio.map(|ratio| {
+            if config.randomize_ratio {
+                let mut rng = rand::rng();
+                let range = config.ratio_range_percent / 100.0;
+                let variation = 1.0 + rng.random::<f64>().mul_add(range * 2.0, -range);
+                (ratio * variation).max(0.01) // Ensure ratio stays positive
+            } else {
+                ratio
+            }
+        })
+    }
+
     fn apply_randomization(&self, base_rate: f64) -> f64 {
         if self.config.randomize_rates {
             let mut rng = rand::rng();
@@ -1121,6 +1168,7 @@ impl RatioFaker {
         torrent_size: u64,
         config: &FakerConfig,
         start_time: Instant,
+        effective_stop_at_ratio: Option<f64>,
     ) {
         // Cumulative ratio (for display in Total Stats)
         let current_ratio =
@@ -1150,7 +1198,12 @@ impl RatioFaker {
             stats.average_download_rate = (stats.session_downloaded as f64 / 1024.0) / elapsed_secs;
         }
 
-        Self::update_progress_and_eta_with_size(stats, config, torrent_size);
+        Self::update_progress_and_eta_with_size(
+            stats,
+            config,
+            torrent_size,
+            effective_stop_at_ratio,
+        );
     }
 
     /// Add a value to a history vec, keeping only the last `max_len` items
@@ -1184,10 +1237,11 @@ impl RatioFaker {
 
     fn check_stop_conditions(&self, stats: &FakerStats) -> bool {
         // Check ratio target (use session ratio, not cumulative)
-        if let Some(target_ratio) = self.config.stop_at_ratio {
+        // Uses effective (randomized) ratio instead of raw config value
+        if let Some(target_ratio) = self.effective_stop_at_ratio {
             if stats.session_ratio >= target_ratio - 0.001 {
                 log_info!(
-                    "Target ratio reached: {:.3} >= {:.3} (session)",
+                    "Target ratio reached: {:.3} >= {:.3} (session, effective)",
                     stats.session_ratio,
                     target_ratio
                 );
@@ -1256,6 +1310,7 @@ impl RatioFaker {
         stats: &mut FakerStats,
         config: &FakerConfig,
         torrent_size: u64,
+        effective_stop_at_ratio: Option<f64>,
     ) {
         // Upload progress (based on session uploaded)
         if let Some(target) = config.stop_at_uploaded {
@@ -1282,7 +1337,8 @@ impl RatioFaker {
         }
 
         // Ratio progress (use session ratio for progress tracking)
-        if let Some(target_ratio) = config.stop_at_ratio {
+        // Uses effective (randomized) ratio for accurate progress display
+        if let Some(target_ratio) = effective_stop_at_ratio {
             stats.ratio_progress = ((stats.session_ratio / target_ratio) * 100.0).min(100.0);
 
             // Calculate ETA for ratio (based on session stats)
@@ -1543,6 +1599,8 @@ mod tests {
         assert_eq!(config.completion_percent, 100.0);
         assert!(config.randomize_rates);
         assert_eq!(config.random_range_percent, 20.0);
+        assert!(config.randomize_ratio);
+        assert_eq!(config.ratio_range_percent, 10.0);
         assert!(config.stop_at_ratio.is_none());
         assert!(config.stop_at_uploaded.is_none());
         assert!(!config.progressive_rates);
@@ -1601,5 +1659,63 @@ mod tests {
         // Even though values are set, they should be None because enabled is false
         assert!(config.stop_at_ratio.is_none());
         assert!(config.stop_at_uploaded.is_none());
+    }
+
+    #[test]
+    fn test_randomize_ratio_within_bounds() {
+        // Run multiple times to test randomization stays within bounds
+        for _ in 0..50 {
+            let config = FakerConfig {
+                stop_at_ratio: Some(2.0),
+                randomize_ratio: true,
+                ratio_range_percent: 20.0,
+                ..Default::default()
+            };
+            let effective = RatioFaker::compute_effective_ratio(&config);
+            let ratio = effective.unwrap();
+            // 2.0 ± 20% => [1.6, 2.4]
+            assert!(ratio >= 1.6 - 0.001, "ratio {ratio} below lower bound 1.6");
+            assert!(ratio <= 2.4 + 0.001, "ratio {ratio} above upper bound 2.4");
+        }
+    }
+
+    #[test]
+    fn test_randomize_ratio_disabled() {
+        let config = FakerConfig {
+            stop_at_ratio: Some(1.5),
+            randomize_ratio: false,
+            ratio_range_percent: 20.0,
+            ..Default::default()
+        };
+        let effective = RatioFaker::compute_effective_ratio(&config);
+        assert_eq!(effective, Some(1.5));
+    }
+
+    #[test]
+    fn test_randomize_ratio_no_stop_at_ratio() {
+        let config = FakerConfig {
+            stop_at_ratio: None,
+            randomize_ratio: true,
+            ratio_range_percent: 20.0,
+            ..Default::default()
+        };
+        let effective = RatioFaker::compute_effective_ratio(&config);
+        assert!(effective.is_none());
+    }
+
+    #[test]
+    fn test_preset_settings_with_randomize_ratio() {
+        let preset = PresetSettings {
+            randomize_ratio: Some(true),
+            ratio_range_percent: Some(15.0),
+            stop_at_ratio_enabled: Some(true),
+            stop_at_ratio: Some(1.5),
+            ..Default::default()
+        };
+        let config: FakerConfig = preset.into();
+
+        assert!(config.randomize_ratio);
+        assert_eq!(config.ratio_range_percent, 15.0);
+        assert_eq!(config.stop_at_ratio, Some(1.5));
     }
 }

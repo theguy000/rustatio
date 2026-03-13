@@ -6,6 +6,8 @@
   let {
     stopAtRatioEnabled,
     stopAtRatio,
+    randomizeRatio,
+    ratioRangePercent,
     stopAtUploadedEnabled,
     stopAtUploadedGB,
     stopAtDownloadedEnabled,
@@ -22,6 +24,8 @@
   // Local state (defaults match createDefaultInstance)
   let localStopAtRatioEnabled = $state(false);
   let localStopAtRatio = $state(2.0);
+  let localRandomizeRatio = $state(true);
+  let localRatioRangePercent = $state(10);
   let localStopAtUploadedEnabled = $state(false);
   let localStopAtUploadedGB = $state(10);
   let localStopAtDownloadedEnabled = $state(false);
@@ -40,6 +44,8 @@
     if (!isEditing) {
       localStopAtRatioEnabled = stopAtRatioEnabled;
       localStopAtRatio = stopAtRatio;
+      localRandomizeRatio = randomizeRatio;
+      localRatioRangePercent = ratioRangePercent;
       localStopAtUploadedEnabled = stopAtUploadedEnabled;
       localStopAtUploadedGB = stopAtUploadedGB;
       localStopAtDownloadedEnabled = stopAtDownloadedEnabled;
@@ -92,6 +98,8 @@
   <StopConditionSettings
     bind:stopAtRatioEnabled={localStopAtRatioEnabled}
     bind:stopAtRatio={localStopAtRatio}
+    bind:randomizeRatio={localRandomizeRatio}
+    bind:ratioRangePercent={localRatioRangePercent}
     bind:stopAtUploadedEnabled={localStopAtUploadedEnabled}
     bind:stopAtUploadedGB={localStopAtUploadedGB}
     bind:stopAtDownloadedEnabled={localStopAtDownloadedEnabled}

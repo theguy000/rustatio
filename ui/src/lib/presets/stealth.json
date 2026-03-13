@@ -18,6 +18,8 @@
     "selectedClient": "qbittorrent",
     "stopAtRatioEnabled": true,
     "stopAtRatio": 1.5,
+    "randomizeRatio": true,
+    "ratioRangePercent": 15,
     "stopAtUploadedEnabled": false,
     "stopAtDownloadedEnabled": false,
     "stopAtSeedTimeEnabled": true,
