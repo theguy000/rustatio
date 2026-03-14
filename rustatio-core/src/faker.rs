@@ -77,6 +77,10 @@ pub struct FakerConfig {
     /// Stop when ratio reaches this value (optional)
     pub stop_at_ratio: Option<f64>,
 
+    /// Pre-computed effective ratio from frontend preview (skips re-randomization if provided)
+    #[serde(default)]
+    pub effective_stop_at_ratio: Option<f64>,
+
     /// Stop after uploading this many bytes (optional)
     pub stop_at_uploaded: Option<u64>,
 
@@ -185,6 +189,7 @@ impl From<PresetSettings> for FakerConfig {
             randomize_ratio: p.randomize_ratio.unwrap_or(false),
             random_ratio_range_percent: p.random_ratio_range_percent.unwrap_or(10.0),
             stop_at_ratio,
+            effective_stop_at_ratio: None,
             stop_at_uploaded,
             stop_at_downloaded,
             stop_at_seed_time,
@@ -236,6 +241,7 @@ impl Default for FakerConfig {
             randomize_ratio: false,
             random_ratio_range_percent: 10.0,
             stop_at_ratio: None,
+            effective_stop_at_ratio: None,
             stop_at_uploaded: None,
             stop_at_downloaded: None,
             stop_at_seed_time: None,
@@ -432,16 +438,27 @@ impl RatioFaker {
         let mut config = config;
         if config.randomize_ratio {
             if let Some(base_ratio) = config.stop_at_ratio {
-                let range = config.random_ratio_range_percent.clamp(0.0, 100.0) / 100.0;
-                let mut rng = rand::rng();
-                let variation: f64 = rng.random::<f64>().mul_add(2.0, -1.0).mul_add(range, 1.0);
-                let effective = (base_ratio * variation * 10000.0).round() / 10000.0;
-                log_info!(
-                    "Randomized stop ratio: base={:.4}, range=±{:.0}%, effective={:.4}",
-                    base_ratio,
-                    config.random_ratio_range_percent,
-                    effective
-                );
+                // Use pre-computed effective ratio from frontend if provided
+                let effective = if let Some(precomputed) = config.effective_stop_at_ratio {
+                    log_info!(
+                        "Using pre-computed stop ratio: base={:.4}, effective={:.4}",
+                        base_ratio,
+                        precomputed
+                    );
+                    precomputed
+                } else {
+                    let range = config.random_ratio_range_percent.clamp(0.0, 100.0) / 100.0;
+                    let mut rng = rand::rng();
+                    let variation: f64 = rng.random::<f64>().mul_add(2.0, -1.0).mul_add(range, 1.0);
+                    let computed = (base_ratio * variation * 10000.0).round() / 10000.0;
+                    log_info!(
+                        "Randomized stop ratio: base={:.4}, range=±{:.0}%, effective={:.4}",
+                        base_ratio,
+                        config.random_ratio_range_percent,
+                        computed
+                    );
+                    computed
+                };
                 config.stop_at_ratio = Some(effective);
             }
         }
