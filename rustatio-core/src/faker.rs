@@ -1149,7 +1149,7 @@ impl RatioFaker {
         config.stop_at_ratio.map(|ratio| {
             if config.randomize_ratio {
                 let mut rng = rand::rng();
-                let range = config.ratio_range_percent / 100.0;
+                let range = config.random_ratio_range_percent / 100.0;
                 let variation = 1.0 + rng.random::<f64>().mul_add(range * 2.0, -range);
                 (ratio * variation).max(0.01) // Ensure ratio stays positive
             } else {
