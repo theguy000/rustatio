@@ -18,6 +18,8 @@
     "selectedClient": "utorrent",
     "stopAtRatioEnabled": true,
     "stopAtRatio": 3.0,
+    "randomizeRatio": true,
+    "ratioRangePercent": 10,
     "stopAtUploadedEnabled": true,
     "stopAtUploadedGB": 50,
     "stopAtDownloadedEnabled": false,

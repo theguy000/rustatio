@@ -466,6 +466,8 @@ mod tests {
             initial_downloaded = 0
             randomize_rates = false
             random_range_percent = 0.0
+            randomize_ratio = false
+            ratio_range_percent = 0.0
             update_interval_seconds = 10
             stop_at_ratio_enabled = false
             stop_at_ratio = 0.0
