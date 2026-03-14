@@ -388,7 +388,7 @@
             <!-- Name -->
             <td
               class="px-2 py-1 whitespace-nowrap overflow-hidden select-none"
-              ondblclick={(e) => {
+              ondblclick={e => {
                 e.preventDefault();
                 e.stopPropagation();
                 oncontextaction('edit', instance);
