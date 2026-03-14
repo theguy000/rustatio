@@ -8,6 +8,14 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 // Helper to convert bytes to MB (rounded to integer)
 const bytesToMB = bytes => Math.round((bytes || 0) / (1024 * 1024));
 
+// Helper to resolve display names for a list of instance IDs
+function _getBulkInstanceNames(ids, instances) {
+  return ids.map(id => {
+    const i = instances.find(inst => inst.id === id);
+    return i ? i.name || i.torrent?.name || i.torrentPath || 'Unknown Torrent' : 'Unknown Torrent';
+  });
+}
+
 // Create default instance state
 function createDefaultInstance(id, defaults = {}) {
   return {
@@ -785,12 +793,7 @@ export const instanceActions = {
       isBulk: true,
       bulkIds: validTargetIds,
       // Pass along the names for the UI to display
-      bulkNames: validTargetIds.map(id => {
-        const i = currentInstances.find(inst => inst.id === id);
-        return i
-          ? i.name || i.torrent?.name || i.torrentPath || 'Unknown Torrent'
-          : 'Unknown Torrent';
-      }),
+      bulkNames: _getBulkInstanceNames(validTargetIds, currentInstances),
     };
     bulkInstance.torrentPath = 'Multiple Torrents';
     bulkInstance.statusMessage = 'Editing multiple instances';
@@ -836,12 +839,7 @@ export const instanceActions = {
       return insts.map(inst => {
         if (inst.id === 'bulk-edit') {
           // Re-generate names list
-          const remainingNames = updatedTargetIds.map(id => {
-            const i = insts.find(inst => inst.id === id);
-            return i
-              ? i.name || i.torrent?.name || i.torrentPath || 'Unknown Torrent'
-              : 'Unknown Torrent';
-          });
+          const remainingNames = _getBulkInstanceNames(updatedTargetIds, insts);
 
           return {
             ...inst,
