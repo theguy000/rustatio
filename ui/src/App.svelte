@@ -21,6 +21,7 @@
     activeInstanceId,
     instanceActions,
     saveSession,
+    computeEffectiveRatio,
   } from './lib/instanceStore.js';
 
   // Import components
@@ -1082,7 +1083,11 @@
       num_want: 50,
       randomize_rates: instance.randomizeRates ?? true,
       random_range_percent: parseFloat(instance.randomRangePercent ?? 20),
-      stop_at_ratio: instance.stopAtRatioEnabled ? parseFloat(instance.stopAtRatio ?? 2.0) : null,
+      randomize_ratio: instance.randomizeRatio ?? false,
+      random_ratio_range_percent: parseFloat(instance.randomRatioRangePercent ?? 10),
+      stop_at_ratio: instance.stopAtRatioEnabled
+        ? parseFloat(instance.effectiveStopAtRatio ?? instance.stopAtRatio ?? 2.0)
+        : null,
       stop_at_uploaded: instance.stopAtUploadedEnabled
         ? parseFloat(instance.stopAtUploadedGB ?? 10) * 1024 * 1024 * 1024
         : null,
@@ -1581,6 +1586,9 @@
                 <StopConditions
                   stopAtRatioEnabled={$activeInstance.stopAtRatioEnabled}
                   stopAtRatio={$activeInstance.stopAtRatio}
+                  randomizeRatio={$activeInstance.randomizeRatio}
+                  randomRatioRangePercent={$activeInstance.randomRatioRangePercent}
+                  effectiveStopAtRatio={$activeInstance.effectiveStopAtRatio}
                   stopAtUploadedEnabled={$activeInstance.stopAtUploadedEnabled}
                   stopAtUploadedGB={$activeInstance.stopAtUploadedGB}
                   stopAtDownloadedEnabled={$activeInstance.stopAtDownloadedEnabled}
@@ -1592,6 +1600,25 @@
                   completionPercent={$activeInstance.completionPercent}
                   isRunning={$activeInstance.isRunning || false}
                   onUpdate={updates => {
+                    // Recompute effective ratio when ratio-related settings change
+                    if (
+                      'stopAtRatio' in updates ||
+                      'randomizeRatio' in updates ||
+                      'randomRatioRangePercent' in updates ||
+                      'stopAtRatioEnabled' in updates
+                    ) {
+                      const inst = $activeInstance;
+                      const merged = { ...inst, ...updates };
+                      if (merged.stopAtRatioEnabled && merged.randomizeRatio) {
+                        updates.effectiveStopAtRatio = computeEffectiveRatio(
+                          merged.stopAtRatio,
+                          merged.randomizeRatio,
+                          merged.randomRatioRangePercent,
+                        );
+                      } else {
+                        updates.effectiveStopAtRatio = null;
+                      }
+                    }
                     instanceActions.updateInstance($activeInstance.id, updates);
                     // Sync config to server (debounced) so it persists across page refreshes
                     syncConfigToServer($activeInstance.id);
@@ -1604,7 +1631,7 @@
                     completionPercent={$activeInstance.completionPercent ?? 100}
                     torrentSize={$activeInstance.torrent?.total_size ?? 0}
                     stopAtRatioEnabled={$activeInstance.stopAtRatioEnabled}
-                    stopAtRatio={$activeInstance.stopAtRatio}
+                    stopAtRatio={$activeInstance.effectiveStopAtRatio ?? $activeInstance.stopAtRatio}
                     stopAtUploadedEnabled={$activeInstance.stopAtUploadedEnabled}
                     stopAtUploadedGB={$activeInstance.stopAtUploadedGB}
                     stopAtDownloadedEnabled={$activeInstance.stopAtDownloadedEnabled}

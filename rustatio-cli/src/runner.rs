@@ -285,6 +285,8 @@ pub fn create_faker_config(config: &RunnerConfig) -> FakerConfig {
         num_want: 50,
         randomize_rates: !config.no_randomize,
         random_range_percent: config.random_range,
+        randomize_ratio: false,
+        random_ratio_range_percent: 10.0,
         stop_at_ratio: config.stop_ratio,
         stop_at_uploaded: config.stop_uploaded.map(|gb| (gb * 1024.0 * 1024.0 * 1024.0) as u64),
         stop_at_downloaded: config.stop_downloaded.map(|gb| (gb * 1024.0 * 1024.0 * 1024.0) as u64),
