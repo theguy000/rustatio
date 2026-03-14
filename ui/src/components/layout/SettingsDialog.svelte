@@ -59,11 +59,6 @@
     }
   });
 
-  function saveCloseBehavior(behavior) {
-    closeBehavior = behavior;
-    localStorage.setItem(CLOSE_BEHAVIOR_KEY, behavior);
-  }
-
   // Custom presets stored in localStorage
   const CUSTOM_PRESETS_KEY = 'rustatio-custom-presets';
 
