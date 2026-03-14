@@ -495,7 +495,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare-release.outputs.tag }}
         run: |
-          draft=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.draft')
+          draft=$(gh release view "$TAG" --json isDraft --jq '.isDraft')
           echo "draft=$draft" >> "$GITHUB_OUTPUT"
 
       - name: Build Tauri App
