@@ -65,6 +65,14 @@ pub struct FakerConfig {
     #[serde(default = "default_random_range")]
     pub random_range_percent: f64,
 
+    /// Enable randomization of the stop ratio target
+    #[serde(default)]
+    pub randomize_ratio: bool,
+
+    /// Randomization range percentage for ratio (e.g., 10 means ±10%)
+    #[serde(default = "default_random_ratio_range")]
+    pub random_ratio_range_percent: f64,
+
     // Stop conditions
     /// Stop when ratio reaches this value (optional)
     pub stop_at_ratio: Option<f64>,
@@ -123,6 +131,8 @@ pub struct PresetSettings {
     pub completion_percent: Option<f64>,
     pub randomize_rates: Option<bool>,
     pub random_range_percent: Option<f64>,
+    pub randomize_ratio: Option<bool>,
+    pub random_ratio_range_percent: Option<f64>,
     // Stop conditions with enabled flags
     pub stop_at_ratio_enabled: Option<bool>,
     pub stop_at_ratio: Option<f64>,
@@ -177,6 +187,8 @@ impl From<PresetSettings> for FakerConfig {
             num_want: 50,
             randomize_rates: p.randomize_rates.unwrap_or(true),
             random_range_percent: p.random_range_percent.unwrap_or(20.0),
+            randomize_ratio: p.randomize_ratio.unwrap_or(false),
+            random_ratio_range_percent: p.random_ratio_range_percent.unwrap_or(10.0),
             stop_at_ratio,
             stop_at_uploaded,
             stop_at_downloaded,
@@ -209,6 +221,10 @@ const fn default_random_range() -> f64 {
     20.0
 }
 
+const fn default_random_ratio_range() -> f64 {
+    10.0
+}
+
 const fn default_scrape_interval() -> u64 {
     60 // 60 seconds
 }
@@ -227,6 +243,8 @@ impl Default for FakerConfig {
             num_want: 50,
             randomize_rates: true,
             random_range_percent: 20.0,
+            randomize_ratio: false,
+            random_ratio_range_percent: 10.0,
             stop_at_ratio: None,
             stop_at_uploaded: None,
             stop_at_downloaded: None,
@@ -1611,6 +1629,8 @@ mod tests {
         assert_eq!(config.completion_percent, 100.0);
         assert!(config.randomize_rates);
         assert_eq!(config.random_range_percent, 20.0);
+        assert!(!config.randomize_ratio);
+        assert_eq!(config.random_ratio_range_percent, 10.0);
         assert!(config.stop_at_ratio.is_none());
         assert!(config.stop_at_uploaded.is_none());
         assert!(!config.progressive_rates);
