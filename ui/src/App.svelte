@@ -701,6 +701,11 @@
           updates.completionPercent = stats.torrent_completion;
         }
 
+        // Sync backend's effective ratio to frontend
+        if (stats.effective_stop_at_ratio != null) {
+          updates.effectiveStopAtRatio = stats.effective_stop_at_ratio;
+        }
+
         instanceActions.updateInstance(instanceId, updates);
 
         if (shouldAutoStop(stats)) {
@@ -738,6 +743,11 @@
 
           if (stats.torrent_completion !== undefined) {
             updates.completionPercent = stats.torrent_completion;
+          }
+
+          // Sync backend's effective ratio to frontend
+          if (stats.effective_stop_at_ratio != null) {
+            updates.effectiveStopAtRatio = stats.effective_stop_at_ratio;
           }
 
           instanceActions.updateInstance(instanceId, updates);
@@ -923,7 +933,12 @@
 
       // Get initial stats
       const initialStats = await api.getStats($activeInstance.id);
-      instanceActions.updateInstance($activeInstance.id, { stats: initialStats });
+      const initialUpdates = { stats: initialStats };
+      // Sync backend's effective ratio to frontend on start
+      if (initialStats.effective_stop_at_ratio != null) {
+        initialUpdates.effectiveStopAtRatio = initialStats.effective_stop_at_ratio;
+      }
+      instanceActions.updateInstance($activeInstance.id, initialUpdates);
     } catch (error) {
       instanceActions.updateInstance($activeInstance.id, {
         statusMessage: 'Failed to start: ' + error,
@@ -1599,11 +1614,14 @@
                   isRunning={$activeInstance.isRunning || false}
                   onUpdate={updates => {
                     // Recompute effective ratio preview when ratio-related settings change
+                    // Only recompute on frontend if the instance is NOT running
+                    // (when running, the backend's effective ratio is authoritative)
                     if (
-                      'stopAtRatio' in updates ||
-                      'randomizeRatio' in updates ||
-                      'randomRatioRangePercent' in updates ||
-                      'stopAtRatioEnabled' in updates
+                      !($activeInstance.isRunning || false) &&
+                      ('stopAtRatio' in updates ||
+                        'randomizeRatio' in updates ||
+                        'randomRatioRangePercent' in updates ||
+                        'stopAtRatioEnabled' in updates)
                     ) {
                       const inst = $activeInstance;
                       const merged = { ...inst, ...updates };

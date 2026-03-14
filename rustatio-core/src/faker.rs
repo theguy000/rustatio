@@ -296,6 +296,9 @@ pub struct FakerStats {
     pub ratio_progress: f64,     // 0-100% toward stop_at_ratio
     pub seed_time_progress: f64, // 0-100% toward stop_at_seed_time
 
+    // === EFFECTIVE TARGETS (after randomization) ===
+    pub effective_stop_at_ratio: Option<f64>, // Actual ratio target used by backend (after randomization)
+
     // === ETA ===
     pub eta_ratio: Option<Duration>,
     pub eta_uploaded: Option<Duration>,
@@ -433,7 +436,7 @@ impl RatioFaker {
                 let mut rng = rand::rng();
                 let variation: f64 = rng.random::<f64>().mul_add(2.0, -1.0).mul_add(range, 1.0);
                 let effective = (base_ratio * variation * 10000.0).round() / 10000.0;
-                log_debug!(
+                log_info!(
                     "Randomized stop ratio: base={:.4}, range=±{:.0}%, effective={:.4}",
                     base_ratio,
                     config.random_ratio_range_percent,
@@ -490,6 +493,9 @@ impl RatioFaker {
             download_progress: 0.0,
             ratio_progress: 0.0,
             seed_time_progress: 0.0,
+
+            // Effective targets
+            effective_stop_at_ratio: config.stop_at_ratio,
 
             // ETA
             eta_ratio: None,
@@ -981,6 +987,7 @@ impl RatioFaker {
             download_progress: 0.0,
             ratio_progress: 0.0,
             seed_time_progress: 0.0,
+            effective_stop_at_ratio: config.stop_at_ratio,
             eta_ratio: None,
             eta_uploaded: None,
             eta_seed_time: None,
