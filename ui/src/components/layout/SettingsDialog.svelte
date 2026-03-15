@@ -166,7 +166,7 @@
   function applyPreset(preset) {
     const active = get(activeInstanceId);
     if (active !== null) {
-      instanceActions.updateInstance(active, preset.settings);
+      instanceActions.updateInstance(active, { ...preset.settings, activePresetId: preset.id });
     }
     close();
   }
