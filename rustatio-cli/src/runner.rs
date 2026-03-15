@@ -290,6 +290,7 @@ pub fn create_faker_config(config: &RunnerConfig) -> FakerConfig {
         randomize_ratio: config.randomize_ratio,
         random_ratio_range_percent: config.random_ratio_range,
         stop_at_ratio: config.stop_ratio,
+        effective_stop_at_ratio: None,
         stop_at_uploaded: config.stop_uploaded.map(|gb| (gb * 1024.0 * 1024.0 * 1024.0) as u64),
         stop_at_downloaded: config.stop_downloaded.map(|gb| (gb * 1024.0 * 1024.0 * 1024.0) as u64),
         stop_at_seed_time: config.stop_time.map(|hours| (hours * 3600.0) as u64),
