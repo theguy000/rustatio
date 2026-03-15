@@ -55,7 +55,9 @@
     $instances.filter(inst => inst.id !== 'bulk-edit' && inst.torrent).length > 1
   );
 
-  let hasRunningInstances = $derived($instances.some(inst => inst.id !== 'bulk-edit' && inst.isRunning));
+  let hasRunningInstances = $derived(
+    $instances.some(inst => inst.id !== 'bulk-edit' && inst.isRunning)
+  );
 
   let hasStoppedInstancesWithTorrents = $derived(
     $instances.some(inst => inst.id !== 'bulk-edit' && inst.torrent && !inst.isRunning)

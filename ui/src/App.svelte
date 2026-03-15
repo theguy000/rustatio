@@ -1112,7 +1112,9 @@
   // Start all instances with torrents loaded (bulk)
   async function startAllInstances() {
     const currentInstances = get(instances);
-    const instancesToStart = currentInstances.filter(inst => inst.id !== 'bulk-edit' && inst.torrent && !inst.isRunning);
+    const instancesToStart = currentInstances.filter(
+      inst => inst.id !== 'bulk-edit' && inst.torrent && !inst.isRunning
+    );
 
     if (instancesToStart.length === 0) return;
 
