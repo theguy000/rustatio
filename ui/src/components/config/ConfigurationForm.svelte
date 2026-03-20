@@ -78,7 +78,7 @@
   // Helper to call onUpdate
   function updateValue(key, value) {
     if (onUpdate) {
-      onUpdate({ [key]: value });
+      onUpdate({ [key]: value, activePresetId: null });
     }
   }
 

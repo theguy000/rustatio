@@ -137,6 +137,7 @@ async function saveSession(instances, activeId) {
         target_upload_rate: parseFloat(inst.targetUploadRate),
         target_download_rate: parseFloat(inst.targetDownloadRate),
         progressive_duration_hours: parseFloat(inst.progressiveDurationHours),
+        active_preset_id: inst.activePresetId || null,
       }));
 
       config.active_instance_id = instances.findIndex(inst => inst.id === activeId);
@@ -176,6 +177,7 @@ async function saveSession(instances, activeId) {
           target_upload_rate: parseFloat(inst.targetUploadRate),
           target_download_rate: parseFloat(inst.targetDownloadRate),
           progressive_duration_hours: parseFloat(inst.progressiveDurationHours),
+          active_preset_id: inst.activePresetId || null,
         })),
         active_instance_id: instances.findIndex(inst => inst.id === activeId),
       };
@@ -242,6 +244,7 @@ function loadSessionFromStorage(config = null) {
         targetUploadRate: inst.target_upload_rate,
         targetDownloadRate: inst.target_download_rate,
         progressiveDurationHours: inst.progressive_duration_hours,
+        activePresetId: inst.active_preset_id || null,
       })),
       activeInstanceIndex: sessionData.active_instance_id,
     };
