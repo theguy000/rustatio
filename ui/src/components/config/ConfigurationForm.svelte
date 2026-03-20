@@ -240,6 +240,15 @@
       return () => document.removeEventListener('click', handlePresetClickOutside);
     }
   });
+
+  // Refresh custom presets when they are imported or deleted in Settings
+  $effect(() => {
+    function onPresetsChanged() {
+      customPresets = loadCustomPresets();
+    }
+    window.addEventListener('rustatio:custom-presets-changed', onPresetsChanged);
+    return () => window.removeEventListener('rustatio:custom-presets-changed', onPresetsChanged);
+  });
 </script>
 
 <Card class="p-3">

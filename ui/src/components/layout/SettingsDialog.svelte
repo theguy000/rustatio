@@ -73,6 +73,7 @@
 
   function saveCustomPresets(presets) {
     localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(presets));
+    window.dispatchEvent(new Event('rustatio:custom-presets-changed'));
   }
 
   let customPresets = $state(loadCustomPresets());
