@@ -102,6 +102,9 @@ function createDefaultInstance(id, defaults = {}) {
     progressiveDurationHours:
       defaults.progressiveDurationHours !== undefined ? defaults.progressiveDurationHours : 1,
 
+    // Active preset
+    activePresetId: defaults.activePresetId || null,
+
     // Status
     statusMessage: 'Select a torrent file to begin',
     statusType: 'warning',
@@ -161,6 +164,7 @@ async function saveSession(instances, activeId) {
         target_upload_rate: parseFloat(inst.targetUploadRate),
         target_download_rate: parseFloat(inst.targetDownloadRate),
         progressive_duration_hours: parseFloat(inst.progressiveDurationHours),
+        active_preset_id: inst.activePresetId || null,
       }));
 
       config.active_instance_id = instances.findIndex(inst => inst.id === activeId);
@@ -203,6 +207,7 @@ async function saveSession(instances, activeId) {
           target_upload_rate: parseFloat(inst.targetUploadRate),
           target_download_rate: parseFloat(inst.targetDownloadRate),
           progressive_duration_hours: parseFloat(inst.progressiveDurationHours),
+          active_preset_id: inst.activePresetId || null,
         })),
         active_instance_id: instances.findIndex(inst => inst.id === activeId),
       };
@@ -272,6 +277,7 @@ function loadSessionFromStorage(config = null) {
         targetUploadRate: inst.target_upload_rate,
         targetDownloadRate: inst.target_download_rate,
         progressiveDurationHours: inst.progressive_duration_hours,
+        activePresetId: inst.active_preset_id || null,
       })),
       activeInstanceIndex: sessionData.active_instance_id,
     };
@@ -457,10 +463,12 @@ export const instanceActions = {
                 }
               }
 
-              const defaults = savedConfig || (getDefaultPreset()?.settings ?? {});
+              const defaultPresetFallback = getDefaultPreset();
+              const defaults = savedConfig || (defaultPresetFallback?.settings ?? {});
 
               const instance = createDefaultInstance(instanceId, {
                 ...defaults,
+                activePresetId: savedConfig?.activePresetId ?? defaultPresetFallback?.id ?? null,
                 cumulativeUploaded: bytesToMB(summary.uploaded),
                 cumulativeDownloaded: bytesToMB(summary.downloaded),
               });
@@ -595,7 +603,9 @@ export const instanceActions = {
         const instanceId = await api.createInstance();
 
         const defaultPreset = getDefaultPreset();
-        const effectiveDefaults = defaultPreset ? defaultPreset.settings : {};
+        const effectiveDefaults = defaultPreset
+          ? { ...defaultPreset.settings, activePresetId: defaultPreset.id }
+          : {};
 
         const newInstance = createDefaultInstance(instanceId, effectiveDefaults);
         instances.set([newInstance]);
@@ -617,7 +627,7 @@ export const instanceActions = {
       // Merge default preset settings with any passed defaults
       const defaultPreset = getDefaultPreset();
       const effectiveDefaults = defaultPreset
-        ? { ...defaultPreset.settings, ...defaults }
+        ? { ...defaultPreset.settings, activePresetId: defaultPreset.id, ...defaults }
         : defaults;
 
       const newInstance = createDefaultInstance(instanceId, effectiveDefaults);
@@ -656,7 +666,9 @@ export const instanceActions = {
       if (currentInstances.length === 1) {
         newInstanceId = await api.createInstance();
         const defaultPreset = getDefaultPreset();
-        const effectiveDefaults = defaultPreset ? { ...defaultPreset.settings } : {};
+        const effectiveDefaults = defaultPreset
+          ? { ...defaultPreset.settings, activePresetId: defaultPreset.id }
+          : {};
         newInstance = createDefaultInstance(newInstanceId, effectiveDefaults);
       }
 
@@ -773,6 +785,12 @@ export const instanceActions = {
 
     // Create frontend instance from server state
     const instance = createDefaultInstance(serverId, buildInstanceDefaultsFromServer(serverInst));
+
+    // Set activePresetId from default preset if available
+    const defaultPreset = getDefaultPreset();
+    if (defaultPreset) {
+      instance.activePresetId = defaultPreset.id;
+    }
 
     // Set torrent info
     instance.torrent = serverInst.torrent;
@@ -979,7 +997,9 @@ export const instanceActions = {
     // Fallback: create a frontend instance and hydrate torrent from backend
     if (gridSummary) {
       const defaultPreset = getDefaultPreset();
-      const defaults = defaultPreset ? defaultPreset.settings : {};
+      const defaults = defaultPreset
+        ? { ...defaultPreset.settings, activePresetId: defaultPreset.id }
+        : {};
       const source = gridSummary.source === 'watch_folder' ? 'watch_folder' : 'manual';
       const instance = createDefaultInstance(normalizedId, { ...defaults, source });
       instance.torrentPath = gridSummary.name || '';
@@ -1040,7 +1060,9 @@ export const instanceActions = {
     if (currentInstances.some(inst => inst.id === id)) return;
 
     const defaultPreset = getDefaultPreset();
-    const presetDefaults = defaultPreset ? defaultPreset.settings : {};
+    const presetDefaults = defaultPreset
+      ? { ...defaultPreset.settings, activePresetId: defaultPreset.id }
+      : {};
     const defaults = { ...presetDefaults, ...importDefaults };
     const instance = createDefaultInstance(id, defaults);
 
@@ -1185,7 +1207,9 @@ export const instanceActions = {
     if (currentInstances.length === 1) {
       const newId = await api.createInstance();
       const defaultPreset = getDefaultPreset();
-      const defaults = defaultPreset ? { ...defaultPreset.settings } : {};
+      const defaults = defaultPreset
+        ? { ...defaultPreset.settings, activePresetId: defaultPreset.id }
+        : {};
       newInstance = createDefaultInstance(newId, defaults);
     }
 

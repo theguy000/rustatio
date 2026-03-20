@@ -2,12 +2,14 @@
   import Card from '$lib/components/ui/card.svelte';
   import Label from '$lib/components/ui/label.svelte';
   import Input from '$lib/components/ui/input.svelte';
-  import { Settings, ArrowUpDown, Clock, Timer, Upload, Download } from '@lucide/svelte';
+  import { Settings, ArrowUpDown, Clock, Timer, Upload, Download, ChevronDown, Layers } from '@lucide/svelte';
   import ClientIcon from './ClientIcon.svelte';
   import ClientSelect from './ClientSelect.svelte';
   import VersionSelect from './VersionSelect.svelte';
   import RandomizationSettings from './RandomizationSettings.svelte';
   import ProgressiveRateSettings from './ProgressiveRateSettings.svelte';
+  import PresetIcon from './PresetIcon.svelte';
+  import { builtInPresets } from '$lib/presets/index.js';
 
   let {
     clients,
@@ -27,6 +29,7 @@
     targetUploadRate,
     targetDownloadRate,
     progressiveDurationHours,
+    activePresetId,
     isRunning,
     onUpdate,
   } = $props();
@@ -75,7 +78,7 @@
   // Helper to call onUpdate
   function updateValue(key, value) {
     if (onUpdate) {
-      onUpdate({ [key]: value });
+      onUpdate({ [key]: value, activePresetId: null });
     }
   }
 
@@ -182,12 +185,140 @@
   function handleBlur() {
     isEditing = false;
   }
+
+  // --- Preset dropdown ---
+  const CUSTOM_PRESETS_KEY = 'rustatio-custom-presets';
+
+  function loadCustomPresets() {
+    try {
+      const stored = localStorage.getItem(CUSTOM_PRESETS_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  let customPresets = $state(loadCustomPresets());
+  let allPresets = $derived([...builtInPresets, ...customPresets]);
+  let presetOpen = $state(false);
+  let presetRef = $state(null);
+
+  // Explicitly track the selected preset
+  let selectedPresetId = $state(null);
+  let selectedPreset = $derived(allPresets.find(p => p.id === selectedPresetId) ?? null);
+
+  // Sync selectedPresetId from the activePresetId prop
+  $effect(() => {
+    if (activePresetId !== undefined) {
+      selectedPresetId = activePresetId;
+    }
+  });
+
+  function applyPreset(preset) {
+    selectedPresetId = preset.id;
+    if (onUpdate) {
+      onUpdate({ ...preset.settings, activePresetId: preset.id });
+    }
+    presetOpen = false;
+  }
+
+  function togglePreset() {
+    if (!isRunning) {
+      presetOpen = !presetOpen;
+    }
+  }
+
+  function handlePresetClickOutside(event) {
+    if (presetRef && !presetRef.contains(event.target)) {
+      presetOpen = false;
+    }
+  }
+
+  $effect(() => {
+    if (presetOpen) {
+      document.addEventListener('click', handlePresetClickOutside);
+      return () => document.removeEventListener('click', handlePresetClickOutside);
+    }
+  });
+
+  // Refresh custom presets when they are imported or deleted in Settings
+  $effect(() => {
+    function onPresetsChanged() {
+      customPresets = loadCustomPresets();
+    }
+    window.addEventListener('rustatio:custom-presets-changed', onPresetsChanged);
+    return () => window.removeEventListener('rustatio:custom-presets-changed', onPresetsChanged);
+  });
 </script>
 
 <Card class="p-3">
   <h2 class="mb-4 text-primary text-lg font-semibold flex items-center gap-2">
     <Settings size={20} /> Configuration
   </h2>
+
+  <!-- Preset -->
+  <div class="mb-4">
+    <div class="flex items-center gap-2 mb-3">
+      <Layers size={16} class="text-muted-foreground" />
+      <span class="text-sm font-medium">Preset</span>
+    </div>
+    <div class="bg-muted/50 rounded-lg border border-border p-3">
+      <div class="relative" bind:this={presetRef}>
+        <button
+          type="button"
+          disabled={isRunning}
+          onclick={togglePreset}
+          class="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <span class="flex items-center gap-2">
+            {#if selectedPreset}
+              <PresetIcon icon={selectedPreset.icon} size={16} class="text-primary" />
+              <span>{selectedPreset.name}</span>
+            {:else}
+              <span class="text-muted-foreground">Choose a preset</span>
+            {/if}
+          </span>
+          <ChevronDown
+            size={16}
+            class="text-muted-foreground transition-transform {presetOpen ? 'rotate-180' : ''}"
+          />
+        </button>
+
+        {#if presetOpen}
+          <div class="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md max-h-60 overflow-y-auto">
+            {#each builtInPresets as preset (preset.id)}
+              <button
+                type="button"
+                onclick={() => applyPreset(preset)}
+                class="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors first:rounded-t-md {preset.id === selectedPresetId ? 'bg-muted' : ''} {customPresets.length === 0 ? 'last:rounded-b-md' : ''}"
+              >
+                <PresetIcon icon={preset.icon} size={16} class={preset.id === selectedPresetId ? 'text-primary' : 'text-muted-foreground'} />
+                <span class="flex-1 text-left">{preset.name}</span>
+                {#if preset.recommended}
+                  <span class="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">recommended</span>
+                {/if}
+              </button>
+            {/each}
+            {#if customPresets.length > 0}
+              <div class="border-t border-border px-3 py-1.5">
+                <span class="text-[10px] text-muted-foreground uppercase tracking-wider">Custom</span>
+              </div>
+              {#each customPresets as preset (preset.id)}
+                <button
+                  type="button"
+                  onclick={() => applyPreset(preset)}
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors last:rounded-b-md {preset.id === selectedPresetId ? 'bg-muted' : ''}"
+                >
+                  <PresetIcon icon={preset.icon} size={16} class={preset.id === selectedPresetId ? 'text-primary' : 'text-muted-foreground'} />
+                  <span class="flex-1 text-left">{preset.name}</span>
+                </button>
+              {/each}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
 
   <!-- Client Settings -->
   <div class="mb-4">

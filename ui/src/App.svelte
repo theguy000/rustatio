@@ -1587,6 +1587,7 @@
                   targetUploadRate={$activeInstance.targetUploadRate}
                   targetDownloadRate={$activeInstance.targetDownloadRate}
                   progressiveDurationHours={$activeInstance.progressiveDurationHours}
+                  activePresetId={$activeInstance.activePresetId}
                   isRunning={$activeInstance.isRunning || false}
                   onUpdate={updates => {
                     // Reset cumulative stats if user changes initial values
