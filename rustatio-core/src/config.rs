@@ -1,3 +1,4 @@
+use crate::faker::PostStopAction;
 use crate::torrent::ClientType;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -44,6 +45,8 @@ pub struct InstanceConfig {
     pub upload_rate: f64,
     pub download_rate: f64,
     pub port: u16,
+    #[serde(default)]
+    pub vpn_port_sync: bool,
     pub completion_percent: f64,
     pub initial_uploaded: u64,
     pub initial_downloaded: u64,
@@ -70,6 +73,8 @@ pub struct InstanceConfig {
     pub stop_at_seed_time_hours: f64,
     pub idle_when_no_leechers: bool,
     pub idle_when_no_seeders: bool,
+    #[serde(default)]
+    pub post_stop_action: PostStopAction,
     pub progressive_rates_enabled: bool,
     pub target_upload_rate: f64,
     pub target_download_rate: f64,
@@ -458,6 +463,7 @@ mod tests {
             upload_rate = 1.0
             download_rate = 2.0
             port = 6881
+            vpn_port_sync = false
             completion_percent = 0.0
             initial_uploaded = 0
             initial_downloaded = 0
@@ -484,6 +490,7 @@ mod tests {
         assert!(inst.torrent_name.is_none());
         assert_eq!(inst.cumulative_uploaded, 0);
         assert_eq!(inst.cumulative_downloaded, 0);
+        assert!(!inst.vpn_port_sync);
         Ok(())
     }
 }

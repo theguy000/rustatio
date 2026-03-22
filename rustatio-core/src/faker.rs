@@ -39,6 +39,10 @@ pub struct FakerConfig {
     /// Port to announce
     pub port: u16,
 
+    /// Sync announced port from the VPN forwarded port when available
+    #[serde(default)]
+    pub vpn_port_sync: bool,
+
     /// Client to emulate
     pub client_type: ClientType,
 
@@ -116,6 +120,10 @@ pub struct FakerConfig {
     /// Time in seconds to reach target rates
     #[serde(default = "default_progressive_duration")]
     pub progressive_duration: u64,
+
+    /// What to do when stop conditions are met
+    #[serde(default)]
+    pub post_stop_action: PostStopAction,
 }
 
 /// UI-friendly preset settings format (matches frontend)
@@ -126,6 +134,7 @@ pub struct PresetSettings {
     pub upload_rate: Option<f64>,
     pub download_rate: Option<f64>,
     pub port: Option<u16>,
+    pub vpn_port_sync: Option<bool>,
     pub selected_client: Option<ClientType>,
     pub selected_client_version: Option<String>,
     pub completion_percent: Option<f64>,
@@ -144,6 +153,7 @@ pub struct PresetSettings {
     pub stop_at_seed_time_hours: Option<f64>,
     pub idle_when_no_leechers: Option<bool>,
     pub idle_when_no_seeders: Option<bool>,
+    pub post_stop_action: Option<String>,
     // Progressive rates
     pub progressive_rates_enabled: Option<bool>,
     pub target_upload_rate: Option<f64>,
@@ -178,6 +188,7 @@ impl From<PresetSettings> for FakerConfig {
             upload_rate: p.upload_rate.unwrap_or(50.0),
             download_rate: p.download_rate.unwrap_or(100.0),
             port: p.port.unwrap_or(6881),
+            vpn_port_sync: p.vpn_port_sync.unwrap_or(false),
             client_type: p.selected_client.unwrap_or(ClientType::QBittorrent),
             client_version: p.selected_client_version,
             initial_uploaded: 0,
@@ -196,6 +207,11 @@ impl From<PresetSettings> for FakerConfig {
             idle_when_no_leechers: p.idle_when_no_leechers.unwrap_or(false),
             idle_when_no_seeders: p.idle_when_no_seeders.unwrap_or(false),
             scrape_interval: 60,
+            post_stop_action: match p.post_stop_action.as_deref() {
+                Some("stop_seeding") => PostStopAction::StopSeeding,
+                Some("delete_instance") => PostStopAction::DeleteInstance,
+                _ => PostStopAction::Idle,
+            },
             progressive_rates: p.progressive_rates_enabled.unwrap_or(false),
             target_upload_rate: p.target_upload_rate,
             target_download_rate: p.target_download_rate,
@@ -230,6 +246,7 @@ impl Default for FakerConfig {
             upload_rate: 50.0,    // 50 KB/s
             download_rate: 100.0, // 100 KB/s
             port: 6881,
+            vpn_port_sync: false,
             client_type: ClientType::QBittorrent,
             client_version: None,
             initial_uploaded: 0,
@@ -252,8 +269,18 @@ impl Default for FakerConfig {
             target_upload_rate: None,
             target_download_rate: None,
             progressive_duration: 3600,
+            post_stop_action: PostStopAction::Idle,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PostStopAction {
+    #[default]
+    Idle,
+    StopSeeding,
+    DeleteInstance,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,6 +343,12 @@ pub struct FakerStats {
     pub download_rate_history: Vec<f64>,
     pub ratio_history: Vec<f64>,
     pub history_timestamps: Vec<u64>, // Unix timestamps in milliseconds
+
+    // === STOP CONDITION STATE ===
+    #[serde(default)]
+    pub stop_condition_met: bool,
+    #[serde(default)]
+    pub post_stop_action: PostStopAction,
 
     // === INTERNAL ===
     #[serde(skip)]
@@ -399,6 +432,34 @@ impl ScrapePlan {
 }
 
 impl RatioFaker {
+    fn resolve_stop_ratio(config: &mut FakerConfig) {
+        if config.randomize_ratio {
+            if let Some(base_ratio) = config.stop_at_ratio {
+                let effective = if let Some(precomputed) = config.effective_stop_at_ratio {
+                    log_info!(
+                        "Using pre-computed stop ratio: base={:.4}, effective={:.4}",
+                        base_ratio,
+                        precomputed
+                    );
+                    precomputed
+                } else {
+                    let range = config.random_ratio_range_percent.clamp(0.0, 100.0) / 100.0;
+                    let mut rng = rand::rng();
+                    let variation: f64 = rng.random::<f64>().mul_add(2.0, -1.0).mul_add(range, 1.0);
+                    let computed = (base_ratio * variation * 10000.0).round() / 10000.0;
+                    log_info!(
+                        "Randomized stop ratio: base={:.4}, range=±{:.0}%, effective={:.4}",
+                        base_ratio,
+                        config.random_ratio_range_percent,
+                        computed
+                    );
+                    computed
+                };
+                config.stop_at_ratio = Some(effective);
+            }
+        }
+    }
+
     /// Create a new `RatioFaker`.
     ///
     /// * `torrent` — shared torrent metadata (`Arc` avoids duplicating large data per instance).
@@ -434,34 +495,8 @@ impl RatioFaker {
         let tracker_client = TrackerClient::new(client_config, http_client)
             .map_err(|e| FakerError::ConfigError(e.to_string()))?;
 
-        // Apply ratio randomization if enabled
         let mut config = config;
-        if config.randomize_ratio {
-            if let Some(base_ratio) = config.stop_at_ratio {
-                // Use pre-computed effective ratio from frontend if provided
-                let effective = if let Some(precomputed) = config.effective_stop_at_ratio {
-                    log_info!(
-                        "Using pre-computed stop ratio: base={:.4}, effective={:.4}",
-                        base_ratio,
-                        precomputed
-                    );
-                    precomputed
-                } else {
-                    let range = config.random_ratio_range_percent.clamp(0.0, 100.0) / 100.0;
-                    let mut rng = rand::rng();
-                    let variation: f64 = rng.random::<f64>().mul_add(2.0, -1.0).mul_add(range, 1.0);
-                    let computed = (base_ratio * variation * 10000.0).round() / 10000.0;
-                    log_info!(
-                        "Randomized stop ratio: base={:.4}, range=±{:.0}%, effective={:.4}",
-                        base_ratio,
-                        config.random_ratio_range_percent,
-                        computed
-                    );
-                    computed
-                };
-                config.stop_at_ratio = Some(effective);
-            }
-        }
+        Self::resolve_stop_ratio(&mut config);
 
         // Calculate how much of THIS torrent is already downloaded
         let completion = config.completion_percent.clamp(0.0, 100.0) / 100.0;
@@ -530,6 +565,9 @@ impl RatioFaker {
             last_announce: None,
             next_announce: None,
             announce_count: 0,
+
+            stop_condition_met: false,
+            post_stop_action: config.post_stop_action,
         };
 
         Ok(Self {
@@ -647,6 +685,24 @@ impl RatioFaker {
         self.stats.idling_reason = None;
     }
 
+    async fn apply_post_stop_action(&mut self) -> Result<()> {
+        self.stats.stop_condition_met = true;
+        match self.config.post_stop_action {
+            PostStopAction::Idle => {
+                log_info!("Stop condition met, idling (post_stop_action=idle)");
+                self.stats.is_idling = true;
+                self.stats.idling_reason = Some("stop_condition_met".to_string());
+                self.stats.current_upload_rate = 0.0;
+                self.stats.current_download_rate = 0.0;
+            }
+            PostStopAction::StopSeeding | PostStopAction::DeleteInstance => {
+                log_info!("Stop condition met, stopping faker");
+                self.stop().await?;
+            }
+        }
+        Ok(())
+    }
+
     /// Update the fake stats (call this periodically)
     pub async fn update(&mut self) -> Result<()> {
         let now = Instant::now();
@@ -683,8 +739,7 @@ impl RatioFaker {
         }
 
         if outcome.stop {
-            log_info!("Stop condition met, stopping faker");
-            self.stop().await?;
+            self.apply_post_stop_action().await?;
         }
 
         Ok(())
@@ -698,8 +753,19 @@ impl RatioFaker {
         let (base_upload_rate, base_download_rate) = self.calc_base_rates(&inputs);
         let (upload_rate, download_rate) =
             self.apply_randomized_rates(base_upload_rate, base_download_rate, inputs.left);
-        let (upload_rate, download_rate, is_idling, idling_reason) =
+        let (mut upload_rate, mut download_rate, is_idling, idling_reason) =
             Self::apply_idling_rules(&inputs, upload_rate, download_rate);
+
+        // Preserve idling state if stop condition was met with post_stop_action=Idle
+        let (is_idling, idling_reason) = if self.stats.stop_condition_met
+            && self.config.post_stop_action == PostStopAction::Idle
+        {
+            upload_rate = 0.0;
+            download_rate = 0.0;
+            (true, Some("stop_condition_met".to_string()))
+        } else {
+            (is_idling, idling_reason)
+        };
 
         self.stats.is_idling = is_idling;
         self.stats.idling_reason = idling_reason;
@@ -963,8 +1029,7 @@ impl RatioFaker {
         }
 
         if outcome.stop {
-            log_info!("Stop condition met, stopping faker");
-            self.stop().await?;
+            self.apply_post_stop_action().await?;
         }
 
         Ok(())
@@ -1016,6 +1081,8 @@ impl RatioFaker {
             last_announce: None,
             next_announce: None,
             announce_count: 0,
+            stop_condition_met: false,
+            post_stop_action: config.post_stop_action,
         }
     }
 
@@ -1038,6 +1105,7 @@ impl RatioFaker {
         config: FakerConfig,
         http_client: Option<reqwest::Client>,
     ) -> Result<()> {
+        let mut config = config;
         let client_type_changed = config.client_type != self.config.client_type
             || config.client_version != self.config.client_version;
 
@@ -1066,6 +1134,9 @@ impl RatioFaker {
 
         self.stats.left = new_left;
         self.stats.torrent_completion = new_torrent_completion;
+
+        Self::resolve_stop_ratio(&mut config);
+        self.stats.effective_stop_at_ratio = config.stop_at_ratio;
 
         self.config = config;
         Ok(())
@@ -1188,7 +1259,7 @@ impl RatioFaker {
         stats.ratio = current_ratio;
         Self::add_to_history(&mut stats.ratio_history, current_ratio, 60);
 
-        // Session ratio (for stop conditions) = session_uploaded / torrent_size
+        // Session ratio = session_uploaded / torrent_size
         stats.session_ratio = if torrent_size > 0 {
             stats.session_uploaded as f64 / torrent_size as f64
         } else {
@@ -1243,36 +1314,41 @@ impl RatioFaker {
     }
 
     fn check_stop_conditions(&self, stats: &FakerStats) -> bool {
-        // Check ratio target (use session ratio, not cumulative)
+        // Don't re-trigger if already met
+        if stats.stop_condition_met {
+            return false;
+        }
+
+        // Check ratio target (cumulative across all sessions)
         if let Some(target_ratio) = self.config.stop_at_ratio {
-            if stats.session_ratio >= target_ratio - 0.001 {
+            if stats.ratio >= target_ratio - 0.001 {
                 log_info!(
-                    "Target ratio reached: {:.3} >= {:.3} (session)",
-                    stats.session_ratio,
+                    "Target ratio reached: {:.3} >= {:.3} (cumulative)",
+                    stats.ratio,
                     target_ratio
                 );
                 return true;
             }
         }
 
-        // Check uploaded target (session uploaded, not total)
+        // Check uploaded target (cumulative across all sessions)
         if let Some(target_uploaded) = self.config.stop_at_uploaded {
-            if stats.session_uploaded >= target_uploaded {
+            if stats.uploaded >= target_uploaded {
                 log_info!(
-                    "Target uploaded reached: {} >= {} bytes (session)",
-                    stats.session_uploaded,
+                    "Target uploaded reached: {} >= {} bytes (cumulative)",
+                    stats.uploaded,
                     target_uploaded
                 );
                 return true;
             }
         }
 
-        // Check downloaded target (session downloaded, not total)
+        // Check downloaded target (cumulative across all sessions)
         if let Some(target_downloaded) = self.config.stop_at_downloaded {
-            if stats.session_downloaded >= target_downloaded {
+            if stats.downloaded >= target_downloaded {
                 log_info!(
-                    "Target downloaded reached: {} >= {} bytes (session)",
-                    stats.session_downloaded,
+                    "Target downloaded reached: {} >= {} bytes (cumulative)",
+                    stats.downloaded,
                     target_downloaded
                 );
                 return true;
@@ -1443,6 +1519,38 @@ impl RatioFakerHandle {
         result
     }
 
+    async fn apply_post_stop_action(&self) -> Result<()> {
+        let post_stop_action = {
+            let guard = self.inner.lock().await;
+            guard.config.post_stop_action
+        };
+        match post_stop_action {
+            PostStopAction::Idle => {
+                log_info!("Stop condition met, idling (post_stop_action=idle)");
+                let mut guard = self.inner.lock().await;
+                guard.stats.stop_condition_met = true;
+                guard.stats.is_idling = true;
+                guard.stats.idling_reason = Some("stop_condition_met".to_string());
+                guard.stats.current_upload_rate = 0.0;
+                guard.stats.current_download_rate = 0.0;
+            }
+            PostStopAction::StopSeeding | PostStopAction::DeleteInstance => {
+                log_info!("Stop condition met, stopping faker");
+                let plan = {
+                    let mut guard = self.inner.lock().await;
+                    guard.stats.stop_condition_met = true;
+                    guard.begin_stop()
+                };
+                if let Some(plan) = plan {
+                    let result = plan.execute().await;
+                    let mut guard = self.inner.lock().await;
+                    guard.apply_stop_result(result);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub async fn update(&self) -> Result<()> {
         let now = Instant::now();
         let outcome = {
@@ -1488,15 +1596,7 @@ impl RatioFakerHandle {
         }
 
         if outcome.stop {
-            let plan = {
-                let mut guard = self.inner.lock().await;
-                guard.begin_stop()
-            };
-            if let Some(plan) = plan {
-                let result = plan.execute().await;
-                let mut guard = self.inner.lock().await;
-                guard.apply_stop_result(result);
-            }
+            self.apply_post_stop_action().await?;
         }
 
         let guard = self.inner.lock().await;
@@ -1539,15 +1639,7 @@ impl RatioFakerHandle {
         }
 
         if outcome.stop {
-            let plan = {
-                let mut guard = self.inner.lock().await;
-                guard.begin_stop()
-            };
-            if let Some(plan) = plan {
-                let result = plan.execute().await;
-                let mut guard = self.inner.lock().await;
-                guard.apply_stop_result(result);
-            }
+            self.apply_post_stop_action().await?;
         }
 
         let guard = self.inner.lock().await;
@@ -1589,6 +1681,7 @@ mod tests {
         let config = FakerConfig::default();
         assert_eq!(config.upload_rate, 50.0);
         assert_eq!(config.download_rate, 100.0);
+        assert!(!config.vpn_port_sync);
     }
 
     #[test]
@@ -1599,6 +1692,7 @@ mod tests {
         assert_eq!(config.upload_rate, 50.0);
         assert_eq!(config.download_rate, 100.0);
         assert_eq!(config.port, 6881);
+        assert!(!config.vpn_port_sync);
         assert_eq!(config.client_type, ClientType::QBittorrent);
         assert_eq!(config.completion_percent, 100.0);
         assert!(config.randomize_rates);
@@ -1616,6 +1710,7 @@ mod tests {
             upload_rate: Some(100.0),
             download_rate: Some(200.0),
             port: Some(51413),
+            vpn_port_sync: Some(true),
             selected_client: Some(ClientType::Transmission),
             completion_percent: Some(50.0),
             randomize_rates: Some(false),
@@ -1635,6 +1730,7 @@ mod tests {
         assert_eq!(config.upload_rate, 100.0);
         assert_eq!(config.download_rate, 200.0);
         assert_eq!(config.port, 51413);
+        assert!(config.vpn_port_sync);
         assert_eq!(config.client_type, ClientType::Transmission);
         assert_eq!(config.completion_percent, 50.0);
         assert!(!config.randomize_rates);
@@ -1663,5 +1759,87 @@ mod tests {
         // Even though values are set, they should be None because enabled is false
         assert!(config.stop_at_ratio.is_none());
         assert!(config.stop_at_uploaded.is_none());
+    }
+
+    #[test]
+    fn test_faker_config_deserializes_missing_vpn_port_sync_as_false() {
+        let json = r#"{
+            "upload_rate": 50.0,
+            "download_rate": 100.0,
+            "port": 6881,
+            "client_type": "qbittorrent",
+            "client_version": null,
+            "initial_uploaded": 0,
+            "initial_downloaded": 0,
+            "completion_percent": 100.0,
+            "num_want": 50,
+            "randomize_rates": true,
+            "random_range_percent": 20.0,
+            "randomize_ratio": false,
+            "random_ratio_range_percent": 10.0,
+            "stop_at_ratio": null,
+            "effective_stop_at_ratio": null,
+            "stop_at_uploaded": null,
+            "stop_at_downloaded": null,
+            "stop_at_seed_time": null,
+            "idle_when_no_leechers": false,
+            "idle_when_no_seeders": false,
+            "scrape_interval": 60,
+            "progressive_rates": false,
+            "target_upload_rate": null,
+            "target_download_rate": null,
+            "progressive_duration": 3600
+        }"#;
+
+        let parsed = serde_json::from_str::<FakerConfig>(json);
+        assert!(parsed.is_ok());
+        let parsed = parsed.unwrap_or_default();
+        assert!(!parsed.vpn_port_sync);
+    }
+
+    #[test]
+    fn update_config_uses_precomputed_effective_stop_ratio() {
+        let torrent = Arc::new(TorrentInfo {
+            info_hash: [7u8; 20],
+            announce: "https://tracker.test/announce".to_string(),
+            announce_list: None,
+            name: "sample".to_string(),
+            total_size: 1024,
+            piece_length: 256,
+            num_pieces: 4,
+            creation_date: None,
+            comment: None,
+            created_by: None,
+            is_single_file: true,
+            file_count: 1,
+            files: Vec::new(),
+        });
+
+        let faker = RatioFaker::new(
+            torrent,
+            FakerConfig {
+                stop_at_ratio: Some(2.0),
+                randomize_ratio: true,
+                effective_stop_at_ratio: Some(1.8689),
+                ..FakerConfig::default()
+            },
+            None,
+        );
+        assert!(faker.is_ok());
+        let mut faker = faker.unwrap_or_else(|_| panic!("failed to create faker"));
+
+        let updated = faker.update_config(
+            FakerConfig {
+                stop_at_ratio: Some(2.0),
+                randomize_ratio: true,
+                effective_stop_at_ratio: Some(1.8689),
+                ..FakerConfig::default()
+            },
+            None,
+        );
+        assert!(updated.is_ok());
+
+        assert_eq!(faker.config.stop_at_ratio, Some(1.8689));
+        assert_eq!(faker.stats.effective_stop_at_ratio, Some(1.8689));
     }
 }
