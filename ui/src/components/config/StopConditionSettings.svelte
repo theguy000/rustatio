@@ -320,8 +320,8 @@
         class="h-8 rounded-md border border-input bg-background px-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-ring"
         onchange={() => onchange?.({ postStopAction })}
       >
-        <option value="idle">Continue seeding (idle)</option>
-        <option value="stop_seeding">Stop seeding</option>
+        <option value="idle">Continue (idle)</option>
+        <option value="stop_seeding">Stop</option>
         <option value="delete_instance">Delete instance</option>
       </select>
     </div>
