@@ -1259,7 +1259,7 @@ impl RatioFaker {
         stats.ratio = current_ratio;
         Self::add_to_history(&mut stats.ratio_history, current_ratio, 60);
 
-        // Session ratio (for stop conditions) = session_uploaded / torrent_size
+        // Session ratio = session_uploaded / torrent_size
         stats.session_ratio = if torrent_size > 0 {
             stats.session_uploaded as f64 / torrent_size as f64
         } else {
@@ -1319,36 +1319,36 @@ impl RatioFaker {
             return false;
         }
 
-        // Check ratio target (use session ratio, not cumulative)
+        // Check ratio target (cumulative across all sessions)
         if let Some(target_ratio) = self.config.stop_at_ratio {
-            if stats.session_ratio >= target_ratio - 0.001 {
+            if stats.ratio >= target_ratio - 0.001 {
                 log_info!(
-                    "Target ratio reached: {:.3} >= {:.3} (session)",
-                    stats.session_ratio,
+                    "Target ratio reached: {:.3} >= {:.3} (cumulative)",
+                    stats.ratio,
                     target_ratio
                 );
                 return true;
             }
         }
 
-        // Check uploaded target (session uploaded, not total)
+        // Check uploaded target (cumulative across all sessions)
         if let Some(target_uploaded) = self.config.stop_at_uploaded {
-            if stats.session_uploaded >= target_uploaded {
+            if stats.uploaded >= target_uploaded {
                 log_info!(
-                    "Target uploaded reached: {} >= {} bytes (session)",
-                    stats.session_uploaded,
+                    "Target uploaded reached: {} >= {} bytes (cumulative)",
+                    stats.uploaded,
                     target_uploaded
                 );
                 return true;
             }
         }
 
-        // Check downloaded target (session downloaded, not total)
+        // Check downloaded target (cumulative across all sessions)
         if let Some(target_downloaded) = self.config.stop_at_downloaded {
-            if stats.session_downloaded >= target_downloaded {
+            if stats.downloaded >= target_downloaded {
                 log_info!(
-                    "Target downloaded reached: {} >= {} bytes (session)",
-                    stats.session_downloaded,
+                    "Target downloaded reached: {} >= {} bytes (cumulative)",
+                    stats.downloaded,
                     target_downloaded
                 );
                 return true;
